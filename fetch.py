@@ -44,7 +44,7 @@ RATE                                = 8000#44100
 WINDOW_SIZE                         = 50
 CHECK_THRESH                        = 3
 SLEEP_TIME                          = 0.5 #(seconds)
-IS_PLOT                             = 1
+IS_PLOT                             = 0
 
 def is_silent(snd_data):
     "Returns 'True' if below the 'silent' threshold"
@@ -143,6 +143,8 @@ def record_to_file(path):
 
     #data = pack('<' + ('h'*len(data)), *data)
     fname = "0.wav"
+    if not os.path.exists(path):
+        os.makedirs(path)
     wf = wave.open(os.path.join(path,fname), 'wb')
     wf.setnchannels(1)
     wf.setsampwidth(sample_width)
