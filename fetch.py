@@ -282,7 +282,7 @@ def get_wav_data(path):
         redgram             = block_reduce(normgram, block_size = (26,26), func = np.mean)
     else:
         redgram             = block_reduce(normgram, block_size = (3,3), func = np.mean)
-    redgram             = redgram[0:imheight,:]
+    redgram             = redgram[0:imheight,0:imwidth]
     red_data            = redgram.reshape(imheight,imwidth, 1)
     empty_data          = np.empty((1,imheight,imwidth,1))
     empty_data[0,:,:,:] = red_data
