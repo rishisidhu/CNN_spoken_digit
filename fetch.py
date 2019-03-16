@@ -91,15 +91,15 @@ def record():
 
 def get_bounds(ds):
     np.array(ds)
-    print(len(ds))
+    lds = len(ds)
     count = 0
     ll=-1
     ul=-1
 
     #Lower Limit
-    for i in range(0,len(ds),WINDOW_SIZE):
+    for i in range(0,lds,WINDOW_SIZE):
         sum = 0
-        for k in range(i,i+WINDOW_SIZE):
+        for k in range(i,(i+WINDOW_SIZE)%lds):
             sum = sum + np.absolute(ds[k])
         if(sum>THRESHOLD):
             count +=1
@@ -109,9 +109,9 @@ def get_bounds(ds):
         
     #Upper Limit
     count = 0
-    for j in range(i,len(ds),WINDOW_SIZE):
+    for j in range(i,lds,WINDOW_SIZE):
         sum = 0
-        for k in range(j,j+WINDOW_SIZE):
+        for k in range(j,(j+WINDOW_SIZE)%lds):
             sum = sum + np.absolute(ds[k])
         if(sum<THRESHOLD):
             count +=1
