@@ -1,0 +1,7 @@
+#File Types
+*.DS_Store
+
+#Folders
+logims/
+testrecs/
+

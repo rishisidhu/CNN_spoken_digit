@@ -24,6 +24,7 @@ from keras.layers import Dense, Conv2D, Dropout, Flatten, MaxPooling2D
 from keras.models import model_from_json
 
 import time
+import datetime
 
 os.environ['KMP_DUPLICATE_LIB_OK']  = 'True'
 imwidth                             = 50
@@ -34,27 +35,30 @@ examples_per_speaker                = 50
 tt_split                            = 0.1
 num_classes                         = 10
 test_rec_folder                     = "./testrecs"
-recording_directory                 = "./recordings"
+log_image_folder                     = "./logims"
+recording_directory                 = "../SoundCNN/recordings/"
 num_test_files                      = 1
 
-THRESHOLD                           = 500
+THRESHOLD                           = 1000
 CHUNK_SIZE                          = 512
 FORMAT                              = pyaudio.paInt16
 RATE                                = 8000#44100
 WINDOW_SIZE                         = 50
 CHECK_THRESH                        = 3
 SLEEP_TIME                          = 0.5 #(seconds)
-IS_PLOT                             = 0
+IS_PLOT                             = 1
+LOG_MODE                            = 0 # 1 for time, 2 for frequency
 
+#Check for silence
 def is_silent(snd_data):
     "Returns 'True' if below the 'silent' threshold"
     return max(snd_data) < THRESHOLD
 
+"""
+Record a word or words from the microphone and 
+return the data as an array of signed shorts.
+"""
 def record():
-    """
-    Record a word or words from the microphone and 
-    return the data as an array of signed shorts.
-    """
     p = pyaudio.PyAudio()
     stream = p.open(format=FORMAT, channels=1, rate=RATE,
         input=True, output=True,
@@ -89,6 +93,7 @@ def record():
 
     return sample_width, r
 
+#Extract relevant signal from the captured audio
 def get_bounds(ds):
     np.array(ds)
     lds = len(ds)
@@ -124,13 +129,13 @@ def get_bounds(ds):
     return ll, ul 
 
 
-
+# Records from the microphone and outputs the resulting data to 'path'
 def record_to_file(path):
-    "Records from the microphone and outputs the resulting data to 'path'"
+    
     sample_width, data = record()
     ll, ul = get_bounds(data)
     print(ll,ul)
-    if(ul-ll<1000):
+    if(ul-ll<100):
         return 0
     #nonz  = np.nonzero(data)
     ds = data[ll:ul]
@@ -164,6 +169,7 @@ def findDuration(fname):
         #print("File:", fname, "--->",frames, rate, sw, chan)
         return duration
 
+#Plot Spectrogram
 def graph_spectrogram(wav_file, nfft=512, noverlap=511):
     findDuration(wav_file)
     rate, data = wavfile.read(wav_file)
@@ -187,12 +193,15 @@ def graph_spectrogram(wav_file, nfft=512, noverlap=511):
     plt.close(fig)
     return imarray
 
+#Convert color image to grayscale
 def rgb2gray(rgb):
     return np.dot(rgb[...,:3], [0.299, 0.587, 0.114])
 
+#Normalize Gray colored image
 def normalize_gray(array):
     return (array - array.min())/(array.max() - array.min())
 
+#Split the dataset into test and train sets randomly
 def create_train_test(audio_dir):
     file_names = [f for f in os.listdir(audio_dir) if '.wav' in f]
     file_names.sort()
@@ -238,6 +247,7 @@ def create_train_test(audio_dir):
         
     return x_train, y_train, x_test, y_test
 
+#Create Keras Model
 def create_model(path):
     x_train, y_train, x_test, y_test = create_train_test(path)
 
@@ -271,6 +281,7 @@ def create_model(path):
     model.fit(x_train, y_train, batch_size=4, epochs=10, verbose=1, validation_data=(x_test, y_test))
     return model
 
+#Extract wave data from recorded audio
 def get_wav_data(path):
     input_wav           = path
     spectrogram         = graph_spectrogram( input_wav )
@@ -288,6 +299,8 @@ def get_wav_data(path):
     empty_data[0,:,:,:] = red_data
     new_data            = empty_data
     return new_data
+
+#Save created model
 def save_model_to_disk(model):
     # serialize model to JSON
     model_json = model.to_json()
@@ -296,6 +309,8 @@ def save_model_to_disk(model):
     # serialize weights to HDF5
     model.save_weights("model.h5")
     print("Saved model to disk")
+
+#Load saved model
 def load_model_from_disk():
     # load json and create model
     json_file = open('model.json', 'r')
@@ -307,39 +322,101 @@ def load_model_from_disk():
     print("Loaded model from disk")
     return loaded_model
 
+#In Loggin mode capture one example of each class. Display it in time and frequency domain.
+def generate_log(in_dir, num_samps_per_cat):
+    file_names = [f for f in os.listdir(in_dir) if '.wav' in f]
+    checklist  = np.zeros(num_samps_per_cat * 10)
+    final_list = []
+    iternum = 0
+    
+    #Get a random sample for each category
+    while(1):
+        print("Iteration Number:", iternum)
+        sample_names = random.sample(file_names,10)
+        for name in sample_names:
+            categ = int(name[0])
+            if(checklist[categ]<num_samps_per_cat):
+                checklist[categ]+=1
+                final_list.append(name)
+        if(int(checklist.sum())==(num_samps_per_cat * 10)):
+            break 
+        iternum+=1
+    print(final_list)
+
+    #Generate Images for each sample
+    lif = os.path.join(log_image_folder,time.strftime("%Y-%m-%d_%H-%M-%S", time.gmtime()))
+    if not os.path.exists(lif):
+        os.makedirs(lif)
+    for name in final_list:      
+        #Time Domain Signal
+        rate, data = wavfile.read(os.path.join(in_dir,name))
+        if(LOG_MODE==1):   
+            fig, ax = plt.subplots( nrows=1, ncols=1 )  # create figure & 1 axis
+            ax.set_title('Sound of ' +name[0] + ' - Sampled audio signal in time')
+            ax.set_xlabel('Sample number')
+            ax.set_ylabel('Amplitude')
+            ax.plot(data)
+            fig.savefig(os.path.join(lif, name[0:5]+'.png'))   # save the figure to file
+            plt.close(fig)
+    
+        #Frequency Domain Signals
+        if(LOG_MODE==2):
+            fig,ax = plt.subplots(1)
+            #fig.subplots_adjust(left=0,right=1,bottom=0,top=1)
+            #ax.axis('off')
+            pxx, freqs, bins, im = ax.specgram(x=data, Fs=rate, noverlap=511, NFFT=512)
+            #ax.axis('off')
+            #plt.rcParams['figure.figsize'] = [0.75,0.5]
+            cbar = fig.colorbar(im)
+            cbar.set_label('Intensity dB')
+            #ax.axis("tight")
+
+            # Prettify
+            ax.set_title('Spectrogram of spoken ' +name[0] )
+            ax.set_xlabel('time')
+            ax.set_ylabel('frequency Hz')
+            fig.savefig(os.path.join(lif, name[0]+'_spec.png'), dpi=300, frameon='false')
+            plt.close(fig)
+
+
 
 
 if __name__ == '__main__':
-    while(1):
-        time.sleep(SLEEP_TIME)
-        print("please speak a word into the microphone")
-        success = record_to_file(test_rec_folder)
-        if(not success):
-            print(" Speak Again Clearly")
-            continue
-        if(os.path.isfile('model.json')):
-            model = load_model_from_disk()
-        else:
-            model = create_model(recording_directory)
-            save_model_to_disk(model)
-        #fname = 'r4.wav'
-        #new_data = get_wav_data(fname)
-        for i in range(num_test_files):
-        #for i in range(1):
-            fname = str(i)+".wav"
-            new_data    = get_wav_data(os.path.join(test_rec_folder,fname))    
-            predictions = np.array(model.predict(new_data))
-            maxpred = predictions.argmax()
-            normpred = normalize_gray(predictions)*100
-            predarr = np.array(predictions[0])
-            sumx = predarr.sum()
-            print("TestFile Name: ", fname, " The Model Predicts:", maxpred)
-            for nc in range(num_classes):
-                confidence = np.round(100*(predarr[nc]/sumx))
-                print("Class ", nc, " Confidence: ", confidence)
-            #print("TestFile Name: ",fname, " Values:", predictions)
-            print("_____________________________\n")
-
+    if(not LOG_MODE):
+        while(1):
+            time.sleep(SLEEP_TIME)
+            if(os.path.isfile('model.json')):
+                print("please speak a word into the microphone")
+                success = record_to_file(test_rec_folder)
+                if(not success):
+                    print(" Speak Again Clearly")
+                    continue
+            else:
+                print("********************\n\nTraining The Model\n")
+            if(os.path.isfile('model.json')):
+                model = load_model_from_disk()
+            else:
+                model = create_model(recording_directory)
+                save_model_to_disk(model)
+            #fname = 'r4.wav'
+            #new_data = get_wav_data(fname)
+            for i in range(num_test_files):
+            #for i in range(1):
+                fname = str(i)+".wav"
+                new_data    = get_wav_data(os.path.join(test_rec_folder,fname))    
+                predictions = np.array(model.predict(new_data))
+                maxpred = predictions.argmax()
+                normpred = normalize_gray(predictions)*100
+                predarr = np.array(predictions[0])
+                sumx = predarr.sum()
+                print("TestFile Name: ", fname, " The Model Predicts:", maxpred)
+                for nc in range(num_classes):
+                    confidence = np.round(100*(predarr[nc]/sumx))
+                    print("Class ", nc, " Confidence: ", confidence)
+                #print("TestFile Name: ",fname, " Values:", predictions)
+                print("_____________________________\n")
+    else:
+        generate_log(recording_directory,6)
 
 
 
